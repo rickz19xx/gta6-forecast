@@ -37,6 +37,9 @@ HOUR = 3600.0
 CLIP = 1.5
 WEIGHT_SCALE = 0.8
 CLASS_THRESHOLDS = (0.6, 0.5, 0.4)
+# a launch whose day peaks at hour index >= PEAK_MIN and whose hour 1 is at most SHARE_MAX of the peak
+PEAK_MIN = 12
+SHARE_MAX = 0.6
 CLASS_MIN = 5
 
 Q_MIN = 0.01
@@ -119,14 +122,20 @@ def build_curves(case):
         if first <= 0.0:
             continue
         peak = max(values.values())
-        curves.append({"vals": values, "p1": first, "share": first / peak if peak > 0 else 0.0})
+        peak_hour = max(values, key=lambda k: (values[k], -k)) if values else 0
+        curves.append({"vals": values, "p1": first, "share": first / peak if peak > 0 else 0.0,
+                       "peak": peak_hour})
     return curves
 
 
 # ---------------------------------------------------------------- the model
 
 def pick_class(curves):
-    """Launches that unlocked at or just before 00:00Z: hour 1 is most of the day's peak."""
+    """Launches whose day peaks in the afternoon/evening: their unlock left the US for later,
+    which is this case's structure (rolling midnight local, the US arrives hours into the UTC day)."""
+    kept = [c for c in curves if c.get("peak", 0) >= PEAK_MIN and c["share"] <= SHARE_MAX]
+    if len(kept) >= CLASS_MIN:
+        return kept
     for threshold in CLASS_THRESHOLDS:
         kept = [c for c in curves if c["share"] >= threshold]
         if len(kept) >= CLASS_MIN:
