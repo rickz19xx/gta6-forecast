@@ -39,7 +39,7 @@ WEIGHT_SCALE = 0.8
 CLASS_THRESHOLDS = (0.6, 0.5, 0.4)
 # a launch whose day peaks at hour index >= PEAK_MIN and whose hour 1 is at most SHARE_MAX of the peak
 PEAK_MIN = 12
-SHARE_MAX = 0.35
+SHARE_MAX = 0.7
 CLASS_MIN = 5
 
 Q_MIN = 0.01
