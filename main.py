@@ -1,6 +1,6 @@
-"""Twitch viewer forecast for the GTA VI release day: persistence with a much tighter spread.
+"""Twitch viewer forecast for the GTA VI release day: a fifth of the launch-day shape, spread between.
 
-q_tau(h) = p1 * exp(0.0 * profile[h] + z_tau * 0.09 * sqrt(h - 1))
+q_tau(h) = p1 * exp(0.2 * profile[h] + z_tau * 0.13 * sqrt(h - 1))
 
 p1 is hour 1's print. profile[h] is the median log-ratio of big rolling-midnight launches'
 hour h against their own hour 1, centred to zero mean, so the family interpolates between
@@ -17,8 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 Z = (-1.6448536269514722, -0.6744897501960817, 0.0, 0.6744897501960817, 1.6448536269514722)
 LEVELS = (0.05, 0.25, 0.5, 0.75, 0.95)
-A = 0.3
-K = 0.09
+A = 0.2
+K = 0.13
 PROFILE = [-0.147, -0.258, -0.23, -0.002, 0.006, -0.027, -0.094, -0.116, -0.096, -0.024, 0.061, 0.167, 0.31, 0.341, 0.425, 0.464, 0.518, 0.541, 0.566, 0.545, 0.544, 0.514, 0.51]
 
 
