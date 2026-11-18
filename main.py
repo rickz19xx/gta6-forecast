@@ -34,12 +34,14 @@ SIGMA = 0.15
 
 HOURS = 24
 HOUR = 3600.0
-CLIP = 1.5
+CLIP = 8.0
 WEIGHT_SCALE = 0.8
 CLASS_THRESHOLDS = (0.6, 0.5, 0.4)
 # a launch whose day peaks at hour index >= PEAK_MIN and whose hour 1 is at most SHARE_MAX of the peak
 PEAK_MIN = 12
 SHARE_MAX = 0.7
+# kernel: seberapa mirip struktur unlock-nya (jam-1 sebagai fraksi puncak)
+SIGMA_G = 0.7
 CLASS_MIN = 5
 
 Q_MIN = 0.01
@@ -123,38 +125,60 @@ def build_curves(case):
             continue
         peak = max(values.values())
         peak_hour = max(values, key=lambda k: (values[k], -k)) if values else 0
+        prior = values.get(-24, 0.0)
+        g2 = math.log(first / prior) if prior > 0 else None
         curves.append({"vals": values, "p1": first, "share": first / peak if peak > 0 else 0.0,
-                       "peak": peak_hour})
+                       "peak": peak_hour, "g2": g2})
     return curves
 
 
 # ---------------------------------------------------------------- the model
 
+def target_g2(case, p1):
+    """log(hour 1 / the same hour 24 h earlier) for the case itself; None when unavailable."""
+    hist = case.get("history_hourly")
+    checkpoint = _ts(case.get("checkpoint"))
+    if not isinstance(hist, list) or checkpoint is None or p1 <= 0:
+        return None
+    for row in hist:
+        if not isinstance(row, dict):
+            continue
+        stamp = _ts(row.get("from"))
+        if stamp is None:
+            continue
+        if abs((checkpoint - stamp).total_seconds() - 86400.0) > 1.0:
+            continue
+        prior = _num(row.get("viewers"))
+        if prior > 0:
+            try:
+                return math.log(p1 / prior)
+            except (ValueError, OverflowError):
+                return None
+    return None
+
+
 def pick_class(curves):
-    """Launches whose day peaks in the afternoon/evening: their unlock left the US for later,
-    which is this case's structure (rolling midnight local, the US arrives hours into the UTC day)."""
-    kept = [c for c in curves if c.get("peak", 0) >= PEAK_MIN and c["share"] <= SHARE_MAX]
-    if len(kept) >= CLASS_MIN:
-        return kept
-    for threshold in CLASS_THRESHOLDS:
-        kept = [c for c in curves if c["share"] >= threshold]
-        if len(kept) >= CLASS_MIN:
-            return kept
+    """Every comparable whose day peaks after the morning; the share kernel in weights_for does the
+    matching, so no launch is dropped for being on the wrong side of a cutoff."""
     return list(curves)
 
 
-def weights_for(kept, p1):
-    """Closer hour-1 scale behaves alike; GTA VI is the biggest launch in the set."""
+def weights_for(kept, p1, gt=None):
+    """Peer group: the launches whose hour-1 spike over the previous day is closest to this one's."""
     if not kept:
         return []
-    anchor = math.log(max(p1, 1.0))
+    if gt is None:
+        return [1.0] * len(kept)
     weights = []
     for c in kept:
-        try:
-            distance = abs(math.log(max(c["p1"], 1.0)) - anchor)
-        except (ValueError, OverflowError):
-            distance = 0.0
-        weights.append(math.exp(-WEIGHT_SCALE * distance))
+        g = c.get("g2")
+        if g is None:
+            weights.append(1.0)
+        else:
+            try:
+                weights.append(math.exp(-(((g - gt) / SIGMA_G) ** 2)))
+            except (ValueError, OverflowError):
+                weights.append(1.0)
     return weights if sum(weights) > 0.0 else [1.0] * len(kept)
 
 
@@ -184,12 +208,12 @@ def persistence(p1):
     return [[z * SIGMA * math.sqrt(index) for z in Z] for index in range(HOURS)]
 
 
-def forecast_logs(p1, curves):
+def forecast_logs(p1, curves, gt=None):
     """24 rows of five log-ratio quantiles, or the persistence fallback if nothing is usable."""
     kept = pick_class(curves)
     if not kept:
         return persistence(p1)
-    weights = weights_for(kept, p1)
+    weights = weights_for(kept, p1, gt)
     raw = []
     for index in range(HOURS):
         pairs = [(ratio_at(c, index), weight) for c, weight in zip(kept, weights)]
@@ -240,7 +264,7 @@ def forecast_case(case):
     p1 = hour_one(case)
     curves = build_curves(case)
     try:
-        logs = forecast_logs(p1, curves)
+        logs = forecast_logs(p1, curves, target_g2(case, p1))
     except Exception:
         logs = persistence(p1)
     rows = [{"hour": h, "q": quantiles(p1, logs[h - 1])} for h in range(2, 25)]
