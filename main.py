@@ -1,11 +1,11 @@
-"""Twitch viewer forecast for the GTA VI release day: hour h keeps hour 1's count.
+"""Twitch viewer forecast for the GTA VI release day: persistence with a tighter spread.
 
-    q_tau(h) = p1 * exp(z_tau * 0.115 * sqrt(h - 1))
+q_tau(h) = p1 * exp(0.0 * profile[h] + z_tau * 0.115 * sqrt(h - 1))
 
-with z_tau the standard normal's quantile at each level (0.05, 0.25, 0.5, 0.75, 0.95) and
-p1 hour 1's print. The house baseline is this same flat shape with 0.15: a launch this size
-keeps drawing near its first hour all day, so the honest spread around that is narrower
-than the house's widening random walk.
+p1 is hour 1's print. profile[h] is the median log-ratio of big rolling-midnight launches'
+hour h against their own hour 1, centred to zero mean, so the family interpolates between
+flat persistence (A = 0) and a full launch-day shape (A = 1). K sets how fast the spread
+widens over the day; the house baseline is A = 0, K = 0.15.
 """
 import json
 import math
