@@ -1,64 +1,103 @@
-"""Twitch viewer forecast for the GTA VI release day: flat centre, tight spread.
+#!/usr/bin/env python3
+"""Quantile forecast of Twitch viewers (hours 2-24) on a log scale.
 
-q_tau(h) = p1 * exp(A * profile[h] + z_tau * K * sqrt(h - 1))
+Each case file in MAKEFUN_INPUT_DIR (*.in, JSON) reports hour-1 viewers in its
+"known" rows; that value anchors the curve. For hour h (2..24) and each of the
+five normal quantiles z the forecast is
 
-p1 is hour 1's print. profile[h] is the median log-ratio of big rolling-midnight launches'
-hour h against their own hour 1, centred to zero mean. K sets how fast the spread widens
-over the day; the house baseline is A = 0, K = 0.15.
+    q(h, z) = p1 * exp(SHAPE_WEIGHT * SHAPE[h-2] + z * SPREAD * sqrt(h-1))
+
+rounded to two decimals, sorted ascending, clamped to [0.01, 1e9]. One .out
+file per case lands in MAKEFUN_OUTPUT_DIR.
+
+Standard library only, deterministic, no network.
 """
+
 import json
 import math
 import os
-import sys
-from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+# Five standard normal quantiles for levels 0.05, 0.25, 0.50, 0.75, 0.95.
+Z_QUANTILES = (
+    -1.6448536269514722,
+    -0.6744897501960817,
+    0.0,
+    0.6744897501960817,
+    1.6448536269514722,
+)
 
-Z = (-1.6448536269514722, -0.6744897501960817, 0.0, 0.6744897501960817, 1.6448536269514722)
-LEVELS = (0.05, 0.25, 0.5, 0.75, 0.95)
-A = 0.3
-K = 0.09
-PROFILE = [-0.147, -0.258, -0.23, -0.002, 0.006, -0.027, -0.094, -0.116, -0.096, -0.024, 0.061, 0.167, 0.31, 0.341, 0.425, 0.464, 0.518, 0.541, 0.566, 0.545, 0.544, 0.514, 0.51]
+# Launch-day shape, measured once from past launches (hours 2..24).
+SHAPE = (
+    -0.147, -0.258, -0.23, -0.002, 0.006, -0.027, -0.094, -0.116, -0.096,
+    -0.024, 0.061, 0.167, 0.31, 0.341, 0.425, 0.464, 0.518, 0.541, 0.566,
+    0.545, 0.544, 0.514, 0.51,
+)
+
+# Multiplier on SHAPE (the "A" of the formula). 0.0 => flat centre.
+SHAPE_WEIGHT = 0.0
+# Log-scale spread per sqrt(hour) (the "K" of the formula).
+SPREAD = 0.1
+
+FALLBACK_P1 = 1.0
+LOW_CLAMP = 0.01
+HIGH_CLAMP = 1e9
 
 
-def hour_one(case):
-    for row in case.get("known") or []:
-        if row.get("hour") == 1:
-            try:
-                return max(float(row.get("viewers") or 1.0), 1.0)
-            except (TypeError, ValueError):
-                return 1.0
-    return 1.0
+def hour_one_viewers(known):
+    """Viewers reported for hour 1, or FALLBACK_P1 when missing/unreadable."""
+    if not isinstance(known, list):
+        return FALLBACK_P1
+    for row in known:
+        if not isinstance(row, dict):
+            continue
+        hour = row.get("hour")
+        try:
+            if int(hour) != 1:
+                continue
+        except (TypeError, ValueError):
+            continue
+        try:
+            p1 = float(row.get("viewers"))
+        except (TypeError, ValueError):
+            return FALLBACK_P1
+        if not math.isfinite(p1):
+            return FALLBACK_P1
+        return p1
+    return FALLBACK_P1
 
 
-def rows(p1):
-    out = []
-    for h in range(2, 25):
-        shift = A * PROFILE[h - 2]
-        sigma = K * math.sqrt(h - 1)
+def forecast(p1):
+    """23 hours of five quantiles each, from the hour-1 anchor."""
+    hours = []
+    for hour in range(2, 25):
+        shape = SHAPE[hour - 2]
+        drift = SHAPE_WEIGHT * shape
+        widen = SPREAD * math.sqrt(hour - 1)
         qs = []
-        for tau, z in zip(LEVELS, Z):
-            q = p1 * math.exp(shift + z * sigma)
-            q = max(min(q, 1e9), 0.01)
-            qs.append(round(q, 2))
+        for z in Z_QUANTILES:
+            value = p1 * math.exp(drift + z * widen)
+            value = min(max(value, LOW_CLAMP), HIGH_CLAMP)
+            qs.append(round(value, 2))
         qs.sort()
-        out.append({"hour": h, "q": qs})
-    return out
+        hours.append({"hour": hour, "q": qs})
+    return {"hours": hours}
 
 
 def main():
-    src = os.environ.get("MAKEFUN_INPUT_DIR") or "/input"
-    dst = os.environ.get("MAKEFUN_OUTPUT_DIR") or "/output"
-    os.makedirs(dst, exist_ok=True)
-    for name in sorted(os.listdir(src)):
-        if not name.endswith(".in"):
-            continue
-        with open(os.path.join(src, name), encoding="utf-8") as fh:
+    in_dir = os.environ["MAKEFUN_INPUT_DIR"]
+    out_dir = os.environ["MAKEFUN_OUTPUT_DIR"]
+    os.makedirs(out_dir, exist_ok=True)
+
+    names = sorted(n for n in os.listdir(in_dir) if n.endswith(".in"))
+    for name in names:
+        with open(os.path.join(in_dir, name), "r", encoding="utf-8") as fh:
             case = json.load(fh)
-        p1 = hour_one(case)
-        doc = {"hours": rows(p1)}
-        with open(os.path.join(dst, name[:-3] + ".out"), "w", encoding="utf-8") as fh:
-            json.dump(doc, fh, separators=(",", ":"))
+        p1 = hour_one_viewers(case.get("known"))
+        payload = forecast(p1)
+        out_path = os.path.join(out_dir, name[:-3] + ".out")
+        with open(out_path, "w", encoding="utf-8", newline="\n") as fh:
+            json.dump(payload, fh, separators=(",", ":"))
+            fh.write("\n")
 
 
 if __name__ == "__main__":
