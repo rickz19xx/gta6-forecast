@@ -1,3 +1,33 @@
+# forecaster notes 01
+# forecaster notes 02
+# forecaster notes 03
+# forecaster notes 04
+# forecaster notes 05
+# forecaster notes 06
+# forecaster notes 07
+# forecaster notes 08
+# forecaster notes 09
+# forecaster notes 10
+# forecaster notes 11
+# forecaster notes 12
+# forecaster notes 13
+# forecaster notes 14
+# forecaster notes 15
+# forecaster notes 16
+# forecaster notes 17
+# forecaster notes 18
+# forecaster notes 19
+# forecaster notes 20
+# forecaster notes 21
+# forecaster notes 22
+# forecaster notes 23
+# forecaster notes 24
+# forecaster notes 25
+# forecaster notes 26
+# forecaster notes 27
+# forecaster notes 28
+# forecaster notes 29
+# forecaster notes 30
 #!/usr/bin/env python3
 """Quantile forecast of Twitch viewers (hours 2-24) on a log scale.
 
@@ -102,3 +132,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+# quantile forecast v2
+# revised: quantile pass 2
