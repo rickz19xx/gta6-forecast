@@ -36,7 +36,7 @@ SHAPE = (
 # Multiplier on SHAPE (the "A" of the formula). 0.0 => flat centre.
 SHAPE_WEIGHT = 0.0
 # Log-scale spread per sqrt(hour) (the "K" of the formula).
-SPREAD = 0.1
+SPREAD = 0.06
 
 FALLBACK_P1 = 1.0
 LOW_CLAMP = 0.01
